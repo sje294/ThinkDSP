@@ -91,10 +91,11 @@ class WavFileWriter:
         self.fp.close()
 
 
-def read_wave(filename='sound.wav'):
+def read_wave(filename='sound.wav', norm=True):
     """Reads a wave file.
 
     filename: string
+    norm: True returns normalised data(default) else returns raw values
 
     returns: Wave
     """
@@ -114,8 +115,11 @@ def read_wave(filename='sound.wav'):
         raise ValueError('sampwidth %d unknown' % sampwidth)
     
     if sampwidth == 3:
-        xs = np.fromstring(z_str, dtype=np.int8).astype(np.int32)
-        ys = (xs[2::3] * 256 + xs[1::3]) * 256 + xs[0::3]
+        a = np.empty((num_samples, nchannels, 4), dtype=_np.uint8)
+        raw_bytes = np.fromstring(z_str, dtype=np.uint8)
+        a[:, :, :sampwidth] = raw_bytes.reshape(-1, nchannels, sampwidth)
+        a[:, :, sampwidth:] = (a[:, :, sampwidth - 1:sampwidth] >> 7) * 255
+        ys = np.reshape(a.view('<i4').reshape(a.shape[:-1]), -1)
     else:
         ys = np.fromstring(z_str, dtype=dtype_map[sampwidth])
 
@@ -124,8 +128,9 @@ def read_wave(filename='sound.wav'):
         ys = ys[::2]
 
     #ts = np.arange(len(ys)) / framerate
-    wave = Wave(ys, framerate=framerate)
-    wave.normalize()
+    wave = Wave(ys, framerate=framerate, sampwidth=sampwidth)
+    if norm==True:
+        wave.normalize()
     return wave
 
 
@@ -620,15 +625,17 @@ class Wave:
     """Represents a discrete-time waveform.
 
     """
-    def __init__(self, ys, ts=None, framerate=None):
+    def __init__(self, ys, ts=None, framerate=None, sampwidth=None):
         """Initializes the wave.
 
         ys: wave array
         ts: array of times
         framerate: samples per second
+        samplewidth: bytes per sample
         """
         self.ys = np.asanyarray(ys)
         self.framerate = framerate if framerate is not None else 11025
+        self.sampwidth = sampwidth if sampwidth is not None else 2
 
         if ts is None:
             self.ts = np.arange(len(ys)) / self.framerate
